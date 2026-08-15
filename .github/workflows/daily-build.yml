@@ -177,12 +177,34 @@ jobs:
             echo "PAT valid; no expiry header returned (classic token or no expiration set)"
           fi
 
+      # The action takes `prompt`, not `prompt_file` — an unknown input is only a
+      # warning, so the misspelling ran the agent with an empty prompt and exited
+      # green having done nothing. Read the file in and pass its contents.
+      - name: Load the build prompt
+        id: prompt
+        if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
+        run: |
+          {
+            echo 'text<<CLAUDE_PROMPT_EOF'
+            cat .github/prompts/daily-build.md
+            echo
+            echo "## Today's work unit"
+            echo
+            echo 'This run has already selected its task. The JSON below is also on disk'
+            echo 'at `.task.json` in the orchestrator checkout.'
+            echo
+            echo '```json'
+            cat .task.json
+            echo '```'
+            echo 'CLAUDE_PROMPT_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build the work unit
         if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt_file: .github/prompts/daily-build.md
+          prompt: ${{ steps.prompt.outputs.text }}
           claude_args: |
             --model ${{ steps.pick.outputs.model }}
             --max-turns 30
@@ -198,8 +220,14 @@ jobs:
         run: |
           rm -f .task.json .task.log
           if [[ -z "$(git status --porcelain)" ]]; then
-            echo "::warning::run produced no change to STATE.json or logs/ — the agent did not record its outcome"
-            exit 0
+            # A run that records nothing is not a success, whatever the agent's
+            # exit code said. Even a deliberately skipped day writes a log entry
+            # and a --record-skip. Silence here means the agent never ran, or ran
+            # without a prompt, and a green tick would hide that.
+            echo "::error::Run produced no change to STATE.json, BACKLOG.md, or logs/."
+            echo "::error::The agent did not record an outcome — it likely never received"
+            echo "::error::a prompt, or exited before Step 7. Check the Build step's output."
+            exit 1
           fi
           git config user.name  "$(python -c "import json;print(json.load(open('STATE.json'))['git_identity']['name'])")"
           git config user.email "$(python -c "import json;print(json.load(open('STATE.json'))['git_identity']['email'])")"

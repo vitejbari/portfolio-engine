@@ -39,10 +39,19 @@ jobs:
           git log --since="$since" --stat --no-merges > .audit/engine-log.txt || true
           ls -1 logs/*.md 2>/dev/null | tail -7 > .audit/recent-logs.txt || true
 
+      - name: Load the audit prompt
+        id: prompt
+        run: |
+          {
+            echo 'text<<CLAUDE_PROMPT_EOF'
+            cat .github/prompts/weekly-audit.md
+            echo 'CLAUDE_PROMPT_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt_file: .github/prompts/weekly-audit.md
+          prompt: ${{ steps.prompt.outputs.text }}
           claude_args: |
             --model claude-sonnet-5
             --max-turns 20
