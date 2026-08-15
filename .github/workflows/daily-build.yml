@@ -1,0 +1,116 @@
+name: Portfolio Daily Build
+
+# NOTE ON THE SCHEDULE
+# 11:00 UTC is 07:00 ET only while the US is on EDT. From November to March it
+# fires at 06:00 ET. GitHub cron has no timezone support, so pick the hour you
+# want in winter and accept the summer drift, or edit twice a year.
+#
+# NOTE ON ACTION PINS
+# Verify that each `uses:` version below actually resolves before relying on the
+# cron; a bad pin fails the job at checkout and the failure is easy to miss.
+
+on:
+  schedule:
+    - cron: "0 11 * * 1,2,3,4,5,6"   # Mon-Sat
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: "Force a specific backlog task id (e.g. CLE-03). Blank = normal rotation."
+        required: false
+        type: string
+      dry_run:
+        description: "Select and print the task, then stop without invoking Claude."
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: portfolio-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Select today's work unit
+        id: pick
+        run: |
+          set +e
+          python scripts/pick_task.py > .task.json 2> .task.log
+          code=$?
+          set -e
+          cat .task.log
+
+          case "$code" in
+            0) : ;;
+            2) echo "reason=paused-or-unconfigured" >> "$GITHUB_OUTPUT"
+               echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            3) echo "reason=backlog-exhausted"      >> "$GITHUB_OUTPUT"
+               echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            *) echo "::error::pick_task.py failed to parse the backlog"; exit 1 ;;
+          esac
+
+          tier_model=$(python -c "import json;print(json.load(open('.task.json'))['model'])")
+          case "$tier_model" in
+            opus)   model="claude-opus-5" ;;
+            sonnet) model="claude-sonnet-5" ;;
+            *)      model="$tier_model" ;;
+          esac
+
+          {
+            echo "proceed=true"
+            echo "model=$model"
+            echo "task_id=$(python -c "import json;print(json.load(open('.task.json'))['id'])")"
+            echo "repo=$(python -c "import json;print(json.load(open('.task.json'))['repo_full'])")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report a skipped day
+        if: steps.pick.outputs.proceed != 'true'
+        run: |
+          echo "### Skipped: ${{ steps.pick.outputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "A skipped day is an acceptable outcome. See CLAUDE.md." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the work unit
+        if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt_file: .github/prompts/daily-build.md
+          claude_args: |
+            --model ${{ steps.pick.outputs.model }}
+            --max-turns 60
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep,mcp__github__create_pull_request,mcp__github__create_issue"
+        env:
+          # The PAT is what lets this run push to the sibling portfolio repos and
+          # what makes the commits attributable to a real account rather than a bot.
+          GH_PORTFOLIO_TOKEN: ${{ secrets.GH_PORTFOLIO_TOKEN }}
+          FORCED_TASK_ID: ${{ inputs.task_id }}
+
+      - name: Persist run state and log
+        if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
+        run: |
+          rm -f .task.json .task.log
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "::warning::run produced no change to STATE.json or logs/ — the agent did not record its outcome"
+            exit 0
+          fi
+          git config user.name  "$(python -c "import json;print(json.load(open('STATE.json'))['git_identity']['name'])")"
+          git config user.email "$(python -c "import json;print(json.load(open('STATE.json'))['git_identity']['email'])")"
+          git add STATE.json BACKLOG.md logs/
+          git commit -m "chore(engine): record run for ${{ steps.pick.outputs.task_id }}
+
+          Bookkeeping only: cycle counter, run log, and any backlog edits the
+          agent made after learning something during the build."
+          git push

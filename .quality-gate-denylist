@@ -1,0 +1,4 @@
+# Extra regexes appended to the built-in denylist in scripts/quality_gate.sh.
+# One extended-regex per line. Lines starting with # are ignored.
+# Add employer product names, internal system codenames, and internal hostnames here.
+# Keep this file itself free of anything you would not want public - it is committed.

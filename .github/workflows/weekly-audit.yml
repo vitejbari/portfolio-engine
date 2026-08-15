@@ -1,0 +1,60 @@
+name: Portfolio Weekly Audit
+
+# Reads the week's diffs and writes a critical self-review. This job proposes; it
+# does not act. Its toolset is read-only plus issue creation, and it has no PAT —
+# so it cannot push to the portfolio repos even if it decides it should.
+
+on:
+  schedule:
+    - cron: "0 14 * * 0"   # Sunday
+  workflow_dispatch:
+
+concurrency:
+  group: portfolio-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write     # to commit the audit log to this repo only
+      issues: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Collect the week's activity
+        run: |
+          mkdir -p .audit
+          since="$(date -u -d '7 days ago' +%Y-%m-%d)"
+          echo "$since" > .audit/since.txt
+          git log --since="$since" --stat --no-merges > .audit/engine-log.txt || true
+          ls -1 logs/*.md 2>/dev/null | tail -7 > .audit/recent-logs.txt || true
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt_file: .github/prompts/weekly-audit.md
+          claude_args: |
+            --model claude-opus-5
+            --max-turns 30
+            --allowedTools "Read,Glob,Grep,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(gh pr list:*),Bash(gh pr view:*),mcp__github__create_issue"
+
+      - name: Commit the audit
+        run: |
+          rm -rf .audit
+          [[ -z "$(git status --porcelain)" ]] && { echo "no audit produced"; exit 0; }
+          git config user.name  "$(python -c "import json;print(json.load(open('STATE.json'))['git_identity']['name'])")"
+          git config user.email "$(python -c "import json;print(json.load(open('STATE.json'))['git_identity']['email'])")"
+          git add logs/audits BACKLOG.md
+          git commit -m "docs(audit): weekly self-review
+
+          Written by the audit job, which has no write access to the portfolio
+          repos. Any action it recommends is Vitej's to take or reject."
+          git push
