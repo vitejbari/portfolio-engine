@@ -116,16 +116,42 @@ jobs:
           # check above and fail deep inside the build with an opaque git auth
           # error — the silent-morning-failure mode this whole preflight exists to
           # prevent. Validate it live, and surface the expiry countdown.
-          hdrs=$(mktemp)
-          code=$(curl -sS -o /dev/null -D "$hdrs" -w '%{http_code}' \
+          # A stray newline or space survives the paste into `gh secret set` and
+          # makes the Authorization header malformed — indistinguishable from a
+          # bad token at the API. Strip whitespace before using it.
+          PAT="$(printf '%s' "$PAT" | tr -d '[:space:]')"
+
+          # Two stages, because "the token is wrong" and "the token can't see this
+          # repo" have completely different fixes and the same symptom otherwise.
+          hdrs=$(mktemp); body=$(mktemp)
+          who=$(curl -sS -o "$body" -D "$hdrs" -w '%{http_code}' \
+                  -H "Authorization: Bearer $PAT" \
+                  -H "Accept: application/vnd.github+json" \
+                  https://api.github.com/user)
+          if [[ "$who" == "401" ]]; then
+            echo "::error::GH_PORTFOLIO_TOKEN is not a valid GitHub credential (HTTP 401 on /user)."
+            echo "::error::The token value itself is wrong — not a permissions problem."
+            echo "::error::Usual causes: the paste was truncated or picked up the wrong clipboard"
+            echo "::error::entry, the token was revoked, or a non-GitHub token was pasted by mistake."
+            echo "::error::Verify a candidate token locally before re-uploading:"
+            echo "::error::  read -rs T && curl -so /dev/null -w '%{http_code}\\n' -H \"Authorization: Bearer \$T\" https://api.github.com/user"
+            echo "::error::200 means good. Then: gh secret set GH_PORTFOLIO_TOKEN --repo vitejbari/portfolio-engine"
+            exit 1
+          elif [[ "$who" != "200" ]]; then
+            echo "::error::GH_PORTFOLIO_TOKEN failed an identity check (HTTP $who on /user)."
+            exit 1
+          fi
+          echo "token authenticates as: $(python3 -c 'import json;print(json.load(open("'"$body"'"))["login"])')"
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
                    -H "Authorization: Bearer $PAT" \
                    -H "Accept: application/vnd.github+json" \
                    https://api.github.com/repos/vitejbari/clinical-llm-eval)
           if [[ "$code" != "200" ]]; then
-            echo "::error::GH_PORTFOLIO_TOKEN is set but rejected by GitHub (HTTP $code)."
-            echo "::error::Most likely expired, revoked, or missing access to the portfolio repos."
-            echo "::error::Mint a replacement at github.com/settings/personal-access-tokens/new"
-            echo "::error::then: gh secret set GH_PORTFOLIO_TOKEN --repo vitejbari/portfolio-engine"
+            echo "::error::Token is valid but cannot reach vitejbari/clinical-llm-eval (HTTP $code)."
+            echo "::error::The PAT's repository selection is missing one or more portfolio repos."
+            echo "::error::Edit it to cover all four (portfolio-engine, clinical-llm-eval, ml-lab,"
+            echo "::error::vitejbari) with Contents / Pull requests / Issues read-write."
             exit 1
           fi
 
