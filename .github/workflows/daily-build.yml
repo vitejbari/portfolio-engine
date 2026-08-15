@@ -6,8 +6,10 @@ name: Portfolio Daily Build
 # want in winter and accept the summer drift, or edit twice a year.
 #
 # NOTE ON ACTION PINS
-# Verify that each `uses:` version below actually resolves before relying on the
-# cron; a bad pin fails the job at checkout and the failure is easy to miss.
+# checkout@v7 and setup-uv@v10 were the current majors as of 2026-08-15 and are
+# verified to resolve on the runner. setup-uv@v5 was pinned originally and still
+# targets Node 20, which the runner now force-upgrades with a deprecation
+# warning — worth re-checking whenever a warning appears in the annotations.
 
 on:
   schedule:
@@ -40,9 +42,11 @@ jobs:
       actions: read
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: false   # the orchestrator has no Python deps; targets manage their own
 
       - name: Select today's work unit
         id: pick
