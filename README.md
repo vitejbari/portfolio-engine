@@ -87,10 +87,12 @@ record in git of when and why.
 
 ## Credential renewal
 
-`GH_PORTFOLIO_TOKEN` is a 90-day fine-grained PAT, minted 2026-08-15 and
-**expiring 2026-11-13**. The daily build validates it live on every run and
-starts warning 21 days out (from 2026-10-23) in both the job annotations and
-the run summary. To renew: mint a replacement at
+`GH_PORTFOLIO_TOKEN` is a fine-grained PAT **expiring 2027-01-31** (read from
+GitHub's own response header, not from when it was minted). The daily build
+validates it live on every run and starts warning 21 days out — from
+2027-01-10 — in both the job annotations and the run summary. The warning is
+driven by the header, so it stays correct even if this paragraph drifts. To
+renew: mint a replacement at
 <https://github.com/settings/personal-access-tokens/new> — four repos,
 Contents/Pull requests/Issues read-write — then
 
