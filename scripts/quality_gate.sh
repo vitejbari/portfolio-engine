@@ -21,6 +21,15 @@
 
 set -uo pipefail
 
+# A repo may declare its own defaults in .quality-gate.env — needed because not
+# every target is a src/-layout Python package (the orchestrator itself is not).
+# Write entries as `: "${QG_SKIP:=lint,types}"` so that a value already present
+# in the environment wins and CI can still override per run.
+if [[ -f .quality-gate.env ]]; then
+  # shellcheck disable=SC1091
+  set -a; source ./.quality-gate.env; set +a
+fi
+
 MIN_COVERAGE="${QG_MIN_COVERAGE:-80}"
 BASE_REF="${QG_BASE_REF:-origin/main}"
 MAX_FILE_KB="${QG_MAX_FILE_KB:-1024}"
@@ -219,8 +228,13 @@ if ! skipped denylist; then
     (( pcre_ok )) || break
     # Exclude the gate itself and the denylist file, which legitimately contain
     # these strings.
+    # Exclude the files that legitimately *name* the forbidden things: the gate,
+    # the denylist, the standards doc, and the agent prompts all say "PHI" on
+    # purpose. Without this the gate fires on its own rulebook.
     hits=$(git grep -nIP "$pattern" -- . \
              ':(exclude)scripts/quality_gate.sh' \
+             ':(exclude)CLAUDE.md' \
+             ':(exclude).github/prompts/*' \
              ":(exclude)${DENYLIST_FILE}" 2>/dev/null || true)
     if [[ -n "$hits" ]]; then
       fail "denylisted pattern /${pattern}/ present:"
