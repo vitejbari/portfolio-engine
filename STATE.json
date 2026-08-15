@@ -10,7 +10,12 @@
     "pr_url": null,
     "note": "No runs yet."
   },
-  "rotation": ["flagship", "flagship", "flagship", "satellite"],
+  "rotation": [
+    "flagship",
+    "flagship",
+    "flagship",
+    "satellite"
+  ],
   "model_by_tier": {
     "flagship": "sonnet",
     "satellite": "sonnet",
@@ -28,6 +33,6 @@
     "vitejbari": "vitejbari/vitejbari",
     "portfolio-engine": "vitejbari/portfolio-engine"
   },
-  "paused": false,
-  "$paused_comment": "Set true to make the daily build exit cleanly without doing work. Cheaper and more reversible than disabling the workflow."
+  "paused": true,
+  "$paused_comment": "Paused 2026-08-15 at Vitej's request; both workflows also disabled at the GitHub level (gh workflow disable). Set false AND re-enable the workflows to resume \u2014 either alone is not enough."
 }
