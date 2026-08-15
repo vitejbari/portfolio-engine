@@ -118,8 +118,33 @@ jobs:
           # prevent. Validate it live, and surface the expiry countdown.
           # A stray newline or space survives the paste into `gh secret set` and
           # makes the Authorization header malformed — indistinguishable from a
-          # bad token at the API. Strip whitespace before using it.
+          # bad token at the API. Strip whitespace before using either.
           PAT="$(printf '%s' "$PAT" | tr -d '[:space:]')"
+          OAUTH="$(printf '%s' "$OAUTH" | tr -d '[:space:]')"
+
+          # Validate the Claude token against a free GET before the action spends
+          # a minute booting only to die on turn 1 with "OAuth access token is
+          # invalid" buried in a JSON trace it then throws away.
+          oc=$(curl -sS -o /dev/null -w '%{http_code}' \
+                 -H "Authorization: Bearer $OAUTH" \
+                 -H "anthropic-beta: oauth-2025-04-20" \
+                 -H "anthropic-version: 2023-06-01" \
+                 https://api.anthropic.com/v1/models)
+          if [[ "$oc" == "401" || "$oc" == "403" ]]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is rejected by the Anthropic API (HTTP $oc)."
+            echo "::error::Mint a fresh one — the value must start with sk-ant-oat01- and comes"
+            echo "::error::from the last line that 'claude setup-token' prints:"
+            echo "::error::  claude setup-token"
+            echo "::error::  gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo vitejbari/portfolio-engine"
+            echo "::error::If you have no Claude subscription, use an API key from"
+            echo "::error::console.anthropic.com and switch the workflow to anthropic_api_key."
+            exit 1
+          elif [[ "$oc" != "200" ]]; then
+            echo "::warning::Claude token check returned HTTP $oc — proceeding, but if the"
+            echo "::warning::build step fails on authentication this is why."
+          else
+            echo "Claude token accepted by the Anthropic API"
+          fi
 
           # Two stages, because "the token is wrong" and "the token can't see this
           # repo" have completely different fixes and the same symptom otherwise.
