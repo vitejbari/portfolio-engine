@@ -29,6 +29,7 @@ schedule ──> pick_task.py ──> agent builds in target repo ──> qualit
 | [`STATE.json`](STATE.json) | Cycle counter, streak, rotation, git identity, pause switch. |
 | [`scripts/pick_task.py`](scripts/pick_task.py) | Deterministic selection. Same inputs, same task, every time. |
 | [`scripts/quality_gate.sh`](scripts/quality_gate.sh) | Eleven mechanical checks. Exit 1 means the commit does not happen. |
+| [`.quality-gate.env`](.quality-gate.env) | Per-repo opt-outs. Targets ship without one, so they get every check. |
 | [`.github/prompts/`](.github/prompts) | The daily-build and weekly-audit prompts. |
 | [`logs/`](logs) | One dated entry per run. `logs/audits/` holds the Sunday self-review. |
 
