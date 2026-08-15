@@ -82,6 +82,29 @@ jobs:
           echo "### Skipped: ${{ steps.pick.outputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
           echo "A skipped day is an acceptable outcome. See CLAUDE.md." >> "$GITHUB_STEP_SUMMARY"
 
+      # Without this, a missing secret surfaces as an authentication error from
+      # inside the action, several hundred log lines down. Say it plainly instead.
+      - name: Preflight — required secrets
+        if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
+        env:
+          OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PAT: ${{ secrets.GH_PORTFOLIO_TOKEN }}
+        run: |
+          missing=0
+          if [[ -z "$OAUTH" ]]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set. Run 'claude setup-token', then"
+            echo "::error::gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo vitejbari/portfolio-engine"
+            missing=1
+          fi
+          if [[ -z "$PAT" ]]; then
+            echo "::error::GH_PORTFOLIO_TOKEN is not set. Create a fine-grained PAT scoped to the"
+            echo "::error::four portfolio repos (Contents/PRs/Issues RW), then"
+            echo "::error::gh secret set GH_PORTFOLIO_TOKEN --repo vitejbari/portfolio-engine"
+            missing=1
+          fi
+          (( missing )) && exit 1
+          echo "both secrets present"
+
       - name: Build the work unit
         if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
         uses: anthropics/claude-code-action@v1
