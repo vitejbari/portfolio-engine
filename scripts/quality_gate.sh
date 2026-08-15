@@ -15,7 +15,8 @@
 #   QG_MAX_FILE_KB    reject any tracked file larger        (default 1024)
 #   QG_DENYLIST       extra newline-separated regexes file  (default .quality-gate-denylist)
 #   QG_SKIP           comma-separated check names to skip   (default empty)
-#                     names: lint,format,types,tests,readme,data,logging,results,denylist,substance
+#                     names: structure,lint,format,types,tests,readme,data,logging,
+#                            results,denylist,substance
 #
 # Exit 0 = safe to commit. Exit 1 = do not commit.
 
@@ -66,38 +67,48 @@ run_tool() {
   fi
 }
 
+# A tool that is not installed must not be reported as "the code has violations".
+# Silently treating an absent linter as a pass is worse still: the gate would go
+# green on a runner with a broken toolchain.
+tool_available() {
+  have uv && [[ -f pyproject.toml ]] && return 0
+  have "$1" && return 0
+  fail "toolchain unavailable: $1 is not installed and there is no uv project to run it from"
+  return 1
+}
+
 printf '\n== quality gate: %s ==\n\n' "$(basename "$PWD")"
 
 # ---------------------------------------------------------------- structure --
-if [[ ! -f pyproject.toml ]]; then
-  fail "no pyproject.toml — CLAUDE.md requires an installable src/ layout"
-elif [[ ! -d src ]]; then
-  fail "no src/ directory — CLAUDE.md requires the src layout"
-else
-  pass "project structure (pyproject.toml + src/)"
+if ! skipped structure; then
+  if [[ ! -f pyproject.toml ]]; then
+    fail "no pyproject.toml — CLAUDE.md requires an installable src/ layout"
+  elif [[ ! -d src ]]; then
+    fail "no src/ directory — CLAUDE.md requires the src layout"
+  else
+    pass "project structure (pyproject.toml + src/)"
+  fi
 fi
 
 # --------------------------------------------------------------------- lint --
-if ! skipped lint; then
+if ! skipped lint && tool_available ruff; then
   if run_tool ruff check . ; then pass "ruff check"; else fail "ruff check reported violations"; fi
 fi
 
-if ! skipped format; then
+if ! skipped format && tool_available ruff; then
   if run_tool ruff format --check . ; then pass "ruff format"; else fail "ruff format would reformat files"; fi
 fi
 
 # -------------------------------------------------------------------- types --
-if ! skipped types; then
-  if [[ -d src ]]; then
-    if run_tool mypy --strict src ; then pass "mypy --strict src"; else fail "mypy --strict reported errors"; fi
-  fi
+if ! skipped types && [[ -d src ]] && tool_available mypy; then
+  if run_tool mypy --strict src ; then pass "mypy --strict src"; else fail "mypy --strict reported errors"; fi
 fi
 
 # -------------------------------------------------------------------- tests --
 if ! skipped tests; then
   if [[ ! -d tests ]] || [[ -z "$(find tests -name 'test_*.py' -print -quit 2>/dev/null)" ]]; then
     fail "no tests/ with test_*.py — untested code does not ship"
-  else
+  elif tool_available pytest; then
     if run_tool pytest -q \
         --cov=src --cov-report=term-missing \
         "--cov-fail-under=${MIN_COVERAGE}" ; then
