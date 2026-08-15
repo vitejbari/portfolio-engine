@@ -201,10 +201,15 @@ jobs:
 
       - name: Build the work unit
         if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
+        id: build
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ steps.prompt.outputs.text }}
+          # The action reports `is_error: true` without saying why. These surface
+          # the underlying failure instead of leaving a one-line dead end.
+          show_full_output: true
+          display_report: true
           claude_args: |
             --model ${{ steps.pick.outputs.model }}
             --max-turns 30
@@ -214,6 +219,20 @@ jobs:
           # what makes the commits attributable to a real account rather than a bot.
           GH_PORTFOLIO_TOKEN: ${{ secrets.GH_PORTFOLIO_TOKEN }}
           FORCED_TASK_ID: ${{ inputs.task_id }}
+
+      # The action writes a structured trace and then discards it. On failure it
+      # is the only thing that says what actually went wrong.
+      - name: Dump the agent's execution trace
+        if: failure() && steps.build.outcome == 'failure'
+        run: |
+          f=/home/runner/work/_temp/claude-execution-output.json
+          if [[ -f "$f" ]]; then
+            echo "=== claude-execution-output.json ==="
+            python3 -m json.tool "$f" 2>/dev/null || cat "$f"
+          else
+            echo "no execution trace at $f"
+            ls -la /home/runner/work/_temp/ | head -30
+          fi
 
       - name: Persist run state and log
         if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
