@@ -112,6 +112,45 @@ jobs:
           (( missing )) && exit 1
           echo "both secrets present"
 
+          # Presence is not validity. An expired PAT would otherwise sail past the
+          # check above and fail deep inside the build with an opaque git auth
+          # error — the silent-morning-failure mode this whole preflight exists to
+          # prevent. Validate it live, and surface the expiry countdown.
+          hdrs=$(mktemp)
+          code=$(curl -sS -o /dev/null -D "$hdrs" -w '%{http_code}' \
+                   -H "Authorization: Bearer $PAT" \
+                   -H "Accept: application/vnd.github+json" \
+                   https://api.github.com/repos/vitejbari/clinical-llm-eval)
+          if [[ "$code" != "200" ]]; then
+            echo "::error::GH_PORTFOLIO_TOKEN is set but rejected by GitHub (HTTP $code)."
+            echo "::error::Most likely expired, revoked, or missing access to the portfolio repos."
+            echo "::error::Mint a replacement at github.com/settings/personal-access-tokens/new"
+            echo "::error::then: gh secret set GH_PORTFOLIO_TOKEN --repo vitejbari/portfolio-engine"
+            exit 1
+          fi
+
+          # Fine-grained PATs report their own expiry in a response header.
+          exp=$(grep -i '^github-authentication-token-expiration:' "$hdrs" \
+                  | cut -d: -f2- | tr -d '\r' | xargs || true)
+          if [[ -n "$exp" ]]; then
+            left=$(( ( $(date -u -d "$exp" +%s) - $(date -u +%s) ) / 86400 ))
+            echo "PAT valid; expires ${exp} (${left} days)"
+            if (( left <= 21 )); then
+              echo "::warning::GH_PORTFOLIO_TOKEN expires in ${left} day(s), on ${exp}."
+              echo "::warning::Renew it before then or the daily build stops: mint a new PAT and re-run"
+              echo "::warning::gh secret set GH_PORTFOLIO_TOKEN --repo vitejbari/portfolio-engine"
+              {
+                echo "## ⚠️ PAT expires in ${left} days (${exp})"
+                echo "Renew at <https://github.com/settings/personal-access-tokens/new>, then:"
+                echo '```'
+                echo "gh secret set GH_PORTFOLIO_TOKEN --repo vitejbari/portfolio-engine"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "PAT valid; no expiry header returned (classic token or no expiration set)"
+          fi
+
       - name: Build the work unit
         if: steps.pick.outputs.proceed == 'true' && inputs.dry_run != true
         uses: anthropics/claude-code-action@v1

@@ -84,3 +84,18 @@ record in git of when and why.
   is for, and the weekly audit is an LLM too. The last line of defence is that I read the
   merged PRs.
 - Coverage thresholds measure lines, not thought.
+
+## Credential renewal
+
+`GH_PORTFOLIO_TOKEN` is a 90-day fine-grained PAT, minted 2026-08-15 and
+**expiring 2026-11-13**. The daily build validates it live on every run and
+starts warning 21 days out (from 2026-10-23) in both the job annotations and
+the run summary. To renew: mint a replacement at
+<https://github.com/settings/personal-access-tokens/new> — four repos,
+Contents/Pull requests/Issues read-write — then
+
+```bash
+gh secret set GH_PORTFOLIO_TOKEN --repo vitejbari/portfolio-engine
+```
+
+Overwriting the existing secret is fine; there is no need to delete it first.
