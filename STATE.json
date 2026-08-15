@@ -12,10 +12,11 @@
   },
   "rotation": ["flagship", "flagship", "flagship", "satellite"],
   "model_by_tier": {
-    "flagship": "opus",
+    "flagship": "sonnet",
     "satellite": "sonnet",
-    "meta": "sonnet"
+    "meta": "haiku"
   },
+  "$model_comment": "Tuned for minimum spend. The quality gate is the same either way, so a cheaper model mostly means more skipped days rather than worse merged code. Set flagship to 'opus' once you have measured a week of real usage and know what it costs you.",
   "git_identity": {
     "name": "Vitej Bari",
     "email": "15456184+vitejbari@users.noreply.github.com",
